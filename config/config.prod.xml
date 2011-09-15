@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<flex-config>
+	<compiler>
+	    <define>
+	        <name>CONFIG::debugging</name>
+	        <value>false</value>
+	    </define>
+	    <define>
+	        <name>CONFIG::release</name>
+	        <value>true</value>
+	    </define>
+		<allow-source-path-overlap>true</allow-source-path-overlap>
+		<debug>false</debug>
+		<verbose-stacktraces>false</verbose-stacktraces>
+		<omit-trace-statements>true</omit-trace-statements>
+		<optimize>true</optimize>
+		<warn-constructor-returns-value>true</warn-constructor-returns-value>
+		<warn-missing-namespace-decl>false</warn-missing-namespace-decl>
+	</compiler>
+</flex-config>

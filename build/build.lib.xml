@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- 
+Properties required:
+	- build.mode	= [prod | dev]	default DEBUG
+	- force.tests	= [true | false]	default false
+	- force.docs	= [true | false]	default false
+
+	- flexTasks		= [*]				flexTask class path
+	- flexUnitTasks = [*]				flexUnitTask class path
+	
+	- FLEX_HOME		= [*]				flex home path
+	- asdoc.bin		= [*]				asdoc binaty file
+	
+ -->
+<project name="CommonBuild">
+
+	<!-- 
+		check the required vars
+	 -->
+	<property name="prop.message1" value="must be defined"/>
+  		<fail message="ANTFLEXLIB_HOME ${prop.message1}" unless="ANTFLEXLIB_HOME"/>
+
+	<property name="prop.message2" value="must be defined"/>
+  		<fail message="FLEX_HOME ${prop.message2}" unless="FLEX_HOME"/>
+  		
+  	<property name="prop.message3" value="must be defined"/>
+  		<fail message="build.mode ${prop.message3}" unless="build.mode"/>
+  		
+ 
+  	<echo message="Environment set to ${build.mode}" />
+  	
+	<!-- 
+		load the default properties
+		if the properties are already loaded, they will
+		not be erase.
+		to customize them, just declare them previously
+	 -->	
+	<property file="${ANTFLEXLIB_HOME}build/build.properties" />
+
+	<!-- 
+		load required tasks
+			=> flex tasks
+			=> flex unit tasks
+			=> ant contrib
+	 -->
+	<taskdef resource="flexTasks.tasks" classpath="${flexTasks}"/>
+	<taskdef resource="flexUnitTasks.tasks" classPath="${flexUnitTasks}"/>
+	<taskdef resource="net/sf/antcontrib/antcontrib.properties" classPath="${antContribTasks}"/>
+
+	
+	<!-- 
+		set the initial environment values
+		if ${build.mode) === prod activate the unit tests and the docs generation
+		otherwise you can use ${force.docs} and ${force.tests} to respectivly
+		force the docs and/or the tests. Also write the build.info file
+		in prod mode, docs and tests are by default activated
+	 -->
+	<if>
+		<equals arg1="${build.mode}" arg2="prod" />
+		<then>			
+			<if>
+				<equals arg1="${force.tests}" arg2="false" />
+				<then>
+					<property name="do.tests" value="false" />
+				</then>
+				<else>
+					<property name="do.docs" value="true" />
+				</else>
+			</if>
+			<if>
+				<equals arg1="${force.docs}" arg2="false" />
+				<then>
+					<property name="do.docs" value="false" />
+				</then>
+				<else>
+					<property name="do.docs" value="true" />
+				</else>
+			</if>
+		</then>
+		<else>
+			<if>
+				<equals arg1="${force.tests}" arg2="true" />
+				<then>
+					<property name="do.tests" value="true" />
+				</then>
+				<else>
+					<property name="do.tests" value="false" />				
+				</else>
+			</if>
+			<if>
+				<equals arg1="${force.docs}" arg2="true" />
+				<then>
+					<property name="do.docs" value="true" />
+				</then>
+				<else>
+					<property name="do.docs" value="false" />
+				</else>
+			</if>
+		</else>
+	</if>
+
+	<!-- 
+		build info macrodef
+		write a build.info at the given path
+
+		the build.info contais information such as:
+			- the last build number (incremental)
+			- the last build time
+			- ...
+	 -->	
+	<macrodef name="build-info">
+	   <attribute name="path" />
+		<sequential>
+				<propertyfile file="@{path}build.info"
+					comment="Build Information File - DO NOT CHANGE">
+				<entry key="build.num"
+					type="int" default="00000"
+					operation="+" pattern="00000"/>
+				<entry key="build.date"
+					type="date"
+					value="now"
+					pattern="dd.MM.yyyy HH:mm"/>
+				<entry key="author" 
+					value="${user.name}" />					
+				<entry key="ant.version"
+					value="${ant.version}" />
+				<entry key="os.name"
+					value="${os.name}" />
+				<entry key="targets"
+					value="${ant.project.invoked-targets}" />					
+			</propertyfile>
+		</sequential>
+	</macrodef>
+	
+	<!-- 
+		unit test macrodef
+		only executed if there is a tests directory in the given path
+		
+		use the @{path}config/tests.xml config file
+		
+		use mxmlc to generate tests and flexunit with CI integration to perform and validate the tests
+		the xml file are generated in a tmp dir which is remove after
+	 -->
+	<macrodef name="tests">
+	   <attribute name="path" />
+		<sequential>
+			<if>
+				<available file="@{path}tests/" type="dir"/>
+				<then>
+					<mxmlc incremental="true" file="@{path}tests/src/tests.mxml" output="@{path}bin/tests.swc">
+						<load-config filename="${FLEX_HOME}/frameworks/flex-config.xml"/>
+						<load-config filename="@{path}config/tests.xml" />
+					</mxmlc>
+					<mkdir dir="@{path}/tests/tmp/" />
+					<flexunit
+						player="flash"
+						swf="@{path}/tests/bin/tests.swf"
+						todir="@{path}/tests/tmp/"
+						haltonfailure="true"
+						verbose="false"
+						localTrusted="false"/>
+					<delete dir="@{path}/tests/tmp/" />
+				</then>
+				<else>
+					<echo message="@{path}: no tests to run" />	
+				</else>
+			</if>
+		</sequential>
+	</macrodef>
+	
+	<!-- 
+		asdoc macrodef
+		only executed if there is a docs directory in the given path
+		
+		use the @{path}config/docs.xml config file
+		
+		generate all the docs and zip them into an asdoc.zip file in the docs directory 
+	 -->
+	<macrodef name="docs">
+		<attribute name="path" />
+		<sequential>
+			<if>
+				<available file="@{path}/docs/" type="dir"/>
+				<then>
+					<mkdir dir="@{path}/docs/tmp/" />
+					<exec executable="${asdoc.bin}" failonerror="true">
+						<arg line='-define+=CONFIG::release,"true"'/>
+						<arg line='-define+=CONFIG::debugging,"false"'/>
+						<arg line="-load-config+='@{path}config/docs.xml'"/>
+						<arg line="-output '@{path}/docs/tmp/'"/>
+					</exec>
+					<zip destfile="@{path}/docs/asdoc.zip"
+					       basedir="@{path}/docs/tmp/" />
+					<delete dir="@{path}/docs/tmp/" />
+				</then>
+				<else>
+					<echo message="@{path}: no docs to generated" />
+				</else>
+			</if>
+		</sequential>
+	</macrodef>
+	
+	<!-- 
+		custom compc macrodef
+		use the @{path}config/app.xml config file
+		generate the @{path}bin/@{name}.swc as output
+	 -->
+	<macrodef name="ccompc">
+		<attribute name="path" />
+		<attribute name="name" />
+		<sequential>
+			<compc  incremental="true" output="@{path}bin/@{name}.swc"  link-report="@{path}bin/link-report.xml">
+				<load-config filename="${ANTFLEXLIB_HOME}/config/config.${build.mode}.xml"/>
+				<load-config filename="${FLEX_HOME}/frameworks/flex-config.xml" />
+				<load-config filename="@{path}/config/app.xml" />
+			</compc>	
+		</sequential>
+	</macrodef>
+	
+	
+	<!-- 
+		custom mxmlx macrodef
+		use the @{path}config/app.xml config file
+		generate the @{path}bin/@{name}.swf as output
+	 -->
+	<macrodef name="cmxmlc">
+		<attribute name="path" />
+		<attribute name="name" />
+		<sequential>
+			<mxmlc incremental="true" output="@{path}bin/@{name}.swf" file="@{path}/src/@{name}.mxml"  link-report="@{path}bin/link-report.xml">
+				<load-config filename="${ANTFLEXLIB_HOME}/config/config.${build.mode}.xml"/>
+				<load-config filename="${FLEX_HOME}/frameworks/flex-config.xml"/>
+				<load-config filename="@{path}/config/app.xml"/>
+			</mxmlc>
+		</sequential>
+	</macrodef>
+
+
+	<!-- 
+		dispose the target
+		remove the link report files
+	 -->
+	<macrodef name="dispose-bin">
+		<attribute name="path" />
+		<sequential>
+			<delete dir="@{path}/bin/">
+			    <include name="**/*.cache"/>
+			    <include name="**/*.xml"/>
+			</delete>
+		</sequential>
+	</macrodef>
+	
+
+	<!-- 
+		prepare binary macrodef
+		prepare a compilation validating the tests and generating the docs if need
+	 -->
+	<macrodef name="prepare-bin">
+		<attribute name="path" />
+		<sequential>
+			<if>
+				<equals arg1="${do.tests}" arg2="true" />
+				<then>
+					<tests path="@{path}" />
+				</then>
+		   		<else>
+		   			<echo message="@{path}: pass by tests" />
+		   		</else>
+		   	</if>
+		   	<if>
+		   		<equals arg1="${do.docs}" arg2="true" />
+		   		<then>
+					<docs path="@{path}" />
+		   		</then>
+		   		<else>
+		   			<echo message="@{path}: pass by docs" />
+		   		</else>
+		   	</if>
+		</sequential>
+	</macrodef>
+
+	<!-- 
+		prepare swc generation macrodef
+	 -->
+	<macrodef name="prepare-swc">
+	   <attribute name="path" />
+	   <attribute name="name" />	   
+	   <sequential>
+	   		<prepare-bin path="@{path}" />
+			<ccompc path="@{path}" name="@{name}" />
+			<if>
+				<equals arg1="${build.mode}" arg2="prod" />
+				<then>
+					<build-info path="@{path}" />			
+				</then>
+			</if>			
+		</sequential>
+		
+	</macrodef>
+
+
+	<!-- 
+		prepare swf generation macrodef
+	 -->
+	<macrodef name="prepare-swf">
+	   <attribute name="path" />
+	   <attribute name="name" />
+	   	   
+	   <sequential>
+	   		<prepare-bin path="@{path}" />
+	   		<cmxmlc path="@{path}" name="@{name}"/>
+			<if>
+				<equals arg1="${build.mode}" arg2="prod" />
+				<then>
+					<build-info path="@{path}" />			
+				</then>
+			</if>
+		</sequential>
+	</macrodef>
+</project>
